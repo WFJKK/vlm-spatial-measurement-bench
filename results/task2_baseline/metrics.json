@@ -1,0 +1,18 @@
+{
+  "task": "distance_between_points",
+  "model": "Qwen/Qwen2.5-VL-7B-Instruct",
+  "n_total": 200,
+  "n_parsed": 200,
+  "parse_rate": 1.0,
+  "mae_mm": 10.923,
+  "median_ae_mm": 8.85,
+  "within_1mm": 0.085,
+  "within_2mm": 0.13,
+  "within_5mm": 0.32,
+  "matched_pair": {
+    "n_valid": 44,
+    "diff_correlation": 0.4828,
+    "frac_same_answer": 0.136,
+    "interpretation": "PARTIALLY uses scale bar"
+  }
+}

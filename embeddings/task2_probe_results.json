@@ -1,0 +1,8 @@
+{
+  "task": "distance_between_points",
+  "model": "Qwen/Qwen2.5-VL-7B-Instruct",
+  "embedding_dim": 3584,
+  "probe_mae_mm": 6.41,
+  "probe_mae_std": 0.78,
+  "probe_r2": 0.901
+}

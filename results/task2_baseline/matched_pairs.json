@@ -1,0 +1,354 @@
+[
+  {
+    "pair_id": 0,
+    "gt_a": 42.12,
+    "gt_b": 23.76,
+    "pred_a": 15.0,
+    "pred_b": 30.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 1,
+    "gt_a": 5.1,
+    "gt_b": 9.16,
+    "pred_a": 30.0,
+    "pred_b": 15.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 2,
+    "gt_a": 5.92,
+    "gt_b": 10.1,
+    "pred_a": 5.0,
+    "pred_b": 5.0,
+    "same_answer": true
+  },
+  {
+    "pair_id": 3,
+    "gt_a": 25.21,
+    "gt_b": 11.55,
+    "pred_a": 20.0,
+    "pred_b": 7.5,
+    "same_answer": false
+  },
+  {
+    "pair_id": 4,
+    "gt_a": 26.78,
+    "gt_b": 46.55,
+    "pred_a": 7.5,
+    "pred_b": 30.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 5,
+    "gt_a": 10.41,
+    "gt_b": 21.67,
+    "pred_a": 10.0,
+    "pred_b": 50.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 6,
+    "gt_a": 6.18,
+    "gt_b": 9.03,
+    "pred_a": 5.0,
+    "pred_b": 50.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 8,
+    "gt_a": 12.58,
+    "gt_b": 6.45,
+    "pred_a": 30.0,
+    "pred_b": 25.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 9,
+    "gt_a": 30.33,
+    "gt_b": 18.73,
+    "pred_a": 30.0,
+    "pred_b": 20.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 10,
+    "gt_a": 15.1,
+    "gt_b": 8.42,
+    "pred_a": 20.0,
+    "pred_b": 5.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 11,
+    "gt_a": 6.69,
+    "gt_b": 12.43,
+    "pred_a": 5.0,
+    "pred_b": 30.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 12,
+    "gt_a": 8.75,
+    "gt_b": 14.69,
+    "pred_a": 5.0,
+    "pred_b": 30.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 13,
+    "gt_a": 40.19,
+    "gt_b": 19.36,
+    "pred_a": 30.0,
+    "pred_b": 5.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 14,
+    "gt_a": 23.84,
+    "gt_b": 45.16,
+    "pred_a": 14.0,
+    "pred_b": 30.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 15,
+    "gt_a": 8.53,
+    "gt_b": 4.89,
+    "pred_a": 50.0,
+    "pred_b": 5.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 16,
+    "gt_a": 19.5,
+    "gt_b": 30.21,
+    "pred_a": 30.0,
+    "pred_b": 30.0,
+    "same_answer": true
+  },
+  {
+    "pair_id": 18,
+    "gt_a": 6.09,
+    "gt_b": 4.84,
+    "pred_a": 30.0,
+    "pred_b": 5.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 19,
+    "gt_a": 31.17,
+    "gt_b": 46.92,
+    "pred_a": 30.0,
+    "pred_b": 10.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 20,
+    "gt_a": 6.45,
+    "gt_b": 10.65,
+    "pred_a": 25.0,
+    "pred_b": 20.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 21,
+    "gt_a": 13.25,
+    "gt_b": 10.22,
+    "pred_a": 50.0,
+    "pred_b": 5.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 24,
+    "gt_a": 5.0,
+    "gt_b": 3.48,
+    "pred_a": 5.0,
+    "pred_b": 5.0,
+    "same_answer": true
+  },
+  {
+    "pair_id": 25,
+    "gt_a": 15.17,
+    "gt_b": 23.13,
+    "pred_a": 5.0,
+    "pred_b": 7.5,
+    "same_answer": false
+  },
+  {
+    "pair_id": 26,
+    "gt_a": 5.18,
+    "gt_b": 7.29,
+    "pred_a": 5.0,
+    "pred_b": 3.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 27,
+    "gt_a": 4.77,
+    "gt_b": 11.15,
+    "pred_a": 25.0,
+    "pred_b": 15.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 28,
+    "gt_a": 17.68,
+    "gt_b": 40.76,
+    "pred_a": 5.0,
+    "pred_b": 20.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 29,
+    "gt_a": 15.97,
+    "gt_b": 8.88,
+    "pred_a": 50.0,
+    "pred_b": 25.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 30,
+    "gt_a": 13.09,
+    "gt_b": 30.44,
+    "pred_a": 15.0,
+    "pred_b": 15.0,
+    "same_answer": true
+  },
+  {
+    "pair_id": 31,
+    "gt_a": 10.74,
+    "gt_b": 5.05,
+    "pred_a": 15.0,
+    "pred_b": 5.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 33,
+    "gt_a": 7.86,
+    "gt_b": 10.54,
+    "pred_a": 5.0,
+    "pred_b": 5.0,
+    "same_answer": true
+  },
+  {
+    "pair_id": 34,
+    "gt_a": 24.48,
+    "gt_b": 18.38,
+    "pred_a": 10.0,
+    "pred_b": 10.0,
+    "same_answer": true
+  },
+  {
+    "pair_id": 35,
+    "gt_a": 46.25,
+    "gt_b": 17.16,
+    "pred_a": 50.0,
+    "pred_b": 5.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 36,
+    "gt_a": 7.11,
+    "gt_b": 10.8,
+    "pred_a": 7.5,
+    "pred_b": 50.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 37,
+    "gt_a": 5.61,
+    "gt_b": 8.07,
+    "pred_a": 5.0,
+    "pred_b": 50.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 38,
+    "gt_a": 20.96,
+    "gt_b": 14.19,
+    "pred_a": 20.0,
+    "pred_b": 30.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 39,
+    "gt_a": 33.55,
+    "gt_b": 23.55,
+    "pred_a": 40.0,
+    "pred_b": 30.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 40,
+    "gt_a": 11.23,
+    "gt_b": 8.51,
+    "pred_a": 30.0,
+    "pred_b": 3.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 41,
+    "gt_a": 18.59,
+    "gt_b": 8.71,
+    "pred_a": 40.0,
+    "pred_b": 10.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 42,
+    "gt_a": 13.83,
+    "gt_b": 27.33,
+    "pred_a": 10.0,
+    "pred_b": 7.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 43,
+    "gt_a": 19.33,
+    "gt_b": 25.83,
+    "pred_a": 10.0,
+    "pred_b": 15.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 44,
+    "gt_a": 28.91,
+    "gt_b": 19.58,
+    "pred_a": 50.0,
+    "pred_b": 25.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 45,
+    "gt_a": 25.38,
+    "gt_b": 16.33,
+    "pred_a": 30.0,
+    "pred_b": 40.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 47,
+    "gt_a": 23.08,
+    "gt_b": 46.71,
+    "pred_a": 10.0,
+    "pred_b": 30.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 48,
+    "gt_a": 7.15,
+    "gt_b": 5.93,
+    "pred_a": 15.0,
+    "pred_b": 5.0,
+    "same_answer": false
+  },
+  {
+    "pair_id": 49,
+    "gt_a": 12.89,
+    "gt_b": 17.92,
+    "pred_a": 7.0,
+    "pred_b": 15.0,
+    "same_answer": false
+  }
+]
