@@ -73,7 +73,7 @@ TAU_NEG: float = 1.05
 EASY_THRESHOLD: float = 0.75
 MEDIUM_LOW: float = 0.1
 
-SCALE_BAR_VALUES: list[int] = [10, 15, 20, 25, 30]
+SCALE_BAR_VALUES: list[int] = [5, 10, 15, 20, 25, 30, 40, 50]
 
 
 # ========================
@@ -352,7 +352,7 @@ def generate_dataset(n_per_level: int = 100, n_test_per_level: int = 50, seed: i
                 if ppm_min >= ppm_max:
                     continue
 
-                ppm = float(rng.uniform(ppm_min, min(ppm_max, ppm_min * 3)))
+                ppm = float(rng.uniform(ppm_min, min(ppm_max, ppm_min * 5)))
                 sb_px = sb_mm * ppm
 
                 plate_margin = 50
@@ -474,9 +474,18 @@ def generate_dataset(n_per_level: int = 100, n_test_per_level: int = 50, seed: i
             n_zeros = sum(1 for t in totals if t == 0)
             n_r3 = sum(1 for s in level_samples if s.get("r3_triggered", False))
             n_r4 = sum(1 for s in level_samples if s.get("r4_violated", False))
+
+            # Shortcut check: spec tightness vs total
+            tightness = [s["rules"]["diam_max"] - s["rules"]["diam_min"] for s in level_samples]
+            corr_tight = abs(np.corrcoef(tightness, totals)[0, 1]) if len(set(tightness)) > 1 else 0
+            # Shortcut check: n_holes vs total
+            n_holes_list = [s["n_holes"] for s in level_samples]
+            corr_nholes = abs(np.corrcoef(n_holes_list, totals)[0, 1]) if len(set(n_holes_list)) > 1 else 0
+
             print(f"  L{level}: zeros={n_zeros}/{len(level_samples)}, "
                   f"r3_triggered={n_r3}, r4_violated={n_r4}, "
-                  f"total_range={min(totals):.1f}-{max(totals):.1f}")
+                  f"total_range={min(totals):.1f}-{max(totals):.1f}, "
+                  f"corr(tight,total)={corr_tight:.2f}, corr(nholes,total)={corr_nholes:.2f}")
 
     print(f"\nDone. Output in {DATASET_DIR}/")
 
@@ -486,10 +495,10 @@ def generate_dataset(n_per_level: int = 100, n_test_per_level: int = 50, seed: i
 # ========================
 
 SYSTEM_PROMPT: str = (
-    "You are inspecting a technical drawing for compliance with multiple rules. "
-    "The plate is {plate_w}x{plate_h} mm.\n"
+    "You are inspecting a technical drawing for compliance with multiple rules.\n"
     "{rules}\n\n"
-    "Use the scale bar to measure each hole diameter and the distances between holes. "
+    "Use the scale bar to measure each hole diameter, the distances between holes, "
+    "and the plate dimensions. "
     "First list each measurement. Then check each rule, noting which conditionals apply. "
     "Finally give the total violation amount.\n"
     "Format:\n"
@@ -499,8 +508,8 @@ SYSTEM_PROMPT: str = (
 )
 
 
-def make_prompt(rules_text: str, plate_w: float, plate_h: float) -> str:
-    return SYSTEM_PROMPT.format(rules=rules_text, plate_w=plate_w, plate_h=plate_h)
+def make_prompt(rules_text: str) -> str:
+    return SYSTEM_PROMPT.format(rules=rules_text)
 
 
 def parse_total(text: str) -> float | None:
@@ -525,11 +534,10 @@ def load_samples(split: str) -> list[dict[str, Any]]:
 
 
 def infer_one(model, processor, image_path: str, rules_text: str,
-              plate_w: float, plate_h: float,
               do_sample: bool = False, temperature: float = 0.7,
               max_tokens: int | None = None) -> str:
     image = Image.open(image_path).convert("RGB")
-    prompt = make_prompt(rules_text, plate_w, plate_h)
+    prompt = make_prompt(rules_text)
     msgs = [{"role": "user", "content": [
         {"type": "image"}, {"type": "text", "text": prompt},
     ]}]
@@ -591,7 +599,7 @@ def run_sft() -> None:
             path = str(Path(DATASET_DIR) / "train" / f"image_{s['idx']:04d}.png")
             image = Image.open(path).convert("RGB")
 
-            prompt = make_prompt(s["rules_text"], s["plate_w_mm"], s["plate_h_mm"])
+            prompt = make_prompt(s["rules_text"])
             answer = s["gt_answer"]
 
             # Answer-only loss masking
@@ -681,8 +689,7 @@ def run_eval(method: str) -> None:
             by_level[lv] = {"correct": 0, "parsed": 0, "total": 0, "maes": []}
 
         path = str(Path(DATASET_DIR) / "test" / f"image_{s['idx']:04d}.png")
-        raw = infer_one(model, processor, path, s["rules_text"],
-                        s["plate_w_mm"], s["plate_h_mm"])
+        raw = infer_one(model, processor, path, s["rules_text"])
         pred = parse_total(raw)
         by_level[lv]["total"] += 1
         if pred is not None:
@@ -712,6 +719,97 @@ def run_eval(method: str) -> None:
 
     os.makedirs("results_conditional", exist_ok=True)
     with open(f"results_conditional/{method}.json", "w") as f:
+        json.dump(results, f, indent=2)
+
+    del model
+    torch.cuda.empty_cache()
+    gc.collect()
+
+
+# ========================
+# NO-IMAGE ABLATION
+# ========================
+
+def run_no_image_ablation(method: str) -> None:
+    """Run eval with blank white images to detect text shortcuts."""
+    from peft import PeftModel
+    from transformers import AutoModelForImageTextToText, AutoProcessor
+
+    ckpt = f"checkpoints_cond_{method}/final"
+    if not os.path.exists(ckpt):
+        print(f"No checkpoint at {ckpt}")
+        return
+
+    print(f"\n=== No-Image Ablation ({method}) ===\n")
+    print("Using blank white images. If accuracy > chance, text shortcuts exist.\n")
+
+    model = AutoModelForImageTextToText.from_pretrained(
+        MODEL_ID, torch_dtype=torch.bfloat16, device_map={"": 0}, trust_remote_code=True)
+    if os.path.exists(WARMSTART_CKPT):
+        model = PeftModel.from_pretrained(model, WARMSTART_CKPT)
+        model = model.merge_and_unload()
+    if method == "grpo":
+        sft_path = "checkpoints_cond_sft/final"
+        if os.path.exists(sft_path):
+            model = PeftModel.from_pretrained(model, sft_path)
+            model = model.merge_and_unload()
+    model = PeftModel.from_pretrained(model, ckpt)
+    model = model.merge_and_unload()
+    processor = AutoProcessor.from_pretrained(MODEL_ID, trust_remote_code=True)
+    model.eval()
+
+    # Create a blank white image
+    blank_path = os.path.join(DATASET_DIR, "blank.png")
+    blank = Image.new("RGB", (700, 550), "white")
+    blank.save(blank_path)
+
+    samples = load_samples("test")
+    tolerance = 1.0
+
+    by_level: dict[int, dict[str, Any]] = {}
+    for i, s in enumerate(samples):
+        lv = s["level"]
+        if lv not in by_level:
+            by_level[lv] = {"correct": 0, "parsed": 0, "total": 0, "maes": []}
+
+        # Use blank image instead of real one
+        raw = infer_one(model, processor, blank_path, s["rules_text"])
+        pred = parse_total(raw)
+        by_level[lv]["total"] += 1
+        if pred is not None:
+            by_level[lv]["parsed"] += 1
+            error = abs(pred - s["gt_total"])
+            by_level[lv]["maes"].append(error)
+            if error <= tolerance:
+                by_level[lv]["correct"] += 1
+
+        if (i + 1) % 50 == 0:
+            print(f"  [{i + 1}/{len(samples)}]")
+
+    print(f"\nNo-image ablation ({method}):")
+    print(f"{'Level':<7} {'Correct':>8} {'Parsed':>8} {'MAE':>8}")
+    print("-" * 35)
+
+    for lv in sorted(by_level.keys()):
+        d = by_level[lv]
+        mae = np.mean(d["maes"]) if d["maes"] else float("inf")
+        print(f"  L{lv:<5} {d['correct']:>5}/{d['parsed']:<3} {d['parsed']:>5}/{d['total']:<3} {mae:>7.2f}")
+
+    # Compare to mean-guess baseline
+    all_totals = [s["gt_total"] for s in samples]
+    mean_total = np.mean(all_totals)
+    mean_guess_mae = np.mean([abs(t - mean_total) for t in all_totals])
+    print(f"\n  Mean-guess MAE (always predict {mean_total:.1f}): {mean_guess_mae:.2f}mm")
+    print(f"  If no-image MAE ≈ mean-guess MAE, no text shortcut exists.")
+
+    os.makedirs("results_conditional", exist_ok=True)
+    with open(f"results_conditional/no_image_{method}.json", "w") as f:
+        results = {}
+        for lv in sorted(by_level.keys()):
+            d = by_level[lv]
+            mae = np.mean(d["maes"]) if d["maes"] else float("inf")
+            results[f"L{lv}"] = {"correct": d["correct"], "parsed": d["parsed"],
+                                  "total": d["total"], "mae": round(mae, 2)}
         json.dump(results, f, indent=2)
 
     del model
@@ -757,7 +855,6 @@ def run_binning() -> None:
         correct = 0
         for _ in range(NUM_GENERATIONS):
             raw = infer_one(model, processor, path, s["rules_text"],
-                           s["plate_w_mm"], s["plate_h_mm"],
                            do_sample=True, temperature=0.7,
                            max_tokens=BIN_MAX_TOKENS)
             pred = parse_total(raw)
@@ -885,7 +982,7 @@ def run_grpo() -> None:
         path = str(Path(DATASET_DIR) / "train" / f"image_{s['idx']:04d}.png")
 
         image = Image.open(path).convert("RGB")
-        prompt = make_prompt(s["rules_text"], s["plate_w_mm"], s["plate_h_mm"])
+        prompt = make_prompt(s["rules_text"])
         msgs = [{"role": "user", "content": [
             {"type": "image", "image": image}, {"type": "text", "text": prompt}]}]
         text = processor.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False)
@@ -1078,7 +1175,7 @@ def run_verify() -> None:
             if ppm_min >= ppm_max:
                 continue
             
-            ppm = float(rng.uniform(ppm_min, min(ppm_max, ppm_min * 3)))
+            ppm = float(rng.uniform(ppm_min, min(ppm_max, ppm_min * 5)))
             
             plate_margin = 50
             plate_w_px = canvas_w - 2 * plate_margin
@@ -1174,6 +1271,7 @@ def main() -> None:
     parser.add_argument("--bin", action="store_true")
     parser.add_argument("--grpo", action="store_true")
     parser.add_argument("--eval", type=str, choices=["sft", "grpo"])
+    parser.add_argument("--no-image", type=str, choices=["sft", "grpo"], dest="no_image")
     parser.add_argument("--summary", action="store_true")
     args = parser.parse_args()
 
@@ -1189,10 +1287,12 @@ def main() -> None:
         run_grpo()
     if args.eval:
         run_eval(args.eval)
+    if args.no_image:
+        run_no_image_ablation(args.no_image)
     if args.summary:
         run_summary()
 
-    if not any([args.generate, args.verify, args.sft, args.bin, args.grpo, args.eval, args.summary]):
+    if not any([args.generate, args.verify, args.sft, args.bin, args.grpo, args.eval, args.no_image, args.summary]):
         parser.print_help()
 
 
