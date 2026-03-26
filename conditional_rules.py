@@ -47,8 +47,13 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import torch
-from PIL import Image
+
+try:
+    import torch
+    from PIL import Image
+    HAS_TORCH = True
+except ImportError:
+    HAS_TORCH = False
 
 MODEL_ID: str = "Qwen/Qwen2.5-VL-7B-Instruct"
 WARMSTART_CKPT: str = "checkpoints_task1_sft3/final"
@@ -59,14 +64,14 @@ LEARNING_RATE: float = 5e-6
 NUM_EPOCHS_SFT: int = 3
 LOG_EVERY: int = 10
 
-NUM_GENERATIONS: int = 8
-MAX_NEW_TOKENS: int = 768
-KL_BETA: float = 0.3
+NUM_GENERATIONS: int = 4
+MAX_NEW_TOKENS: int = 512
+KL_BETA: float = 0.05
 TAU_POS: float = 1.0
 TAU_NEG: float = 1.05
 
 EASY_THRESHOLD: float = 0.75
-MEDIUM_LOW: float = 0.15
+MEDIUM_LOW: float = 0.1
 
 SCALE_BAR_VALUES: list[int] = [10, 15, 20, 25, 30]
 
@@ -91,14 +96,14 @@ def make_rules(rng: np.random.Generator, level: int) -> dict[str, Any]:
     if level >= 2:
         # Conditional: big holes need more spacing
         rules["big_threshold"] = round(float(rng.uniform(
-            diam_min + (diam_max - diam_min) * 0.4,
-            diam_max - 0.5,
+            diam_min + (diam_max - diam_min) * 0.6,
+            diam_max + 2.0,
         )), 1)
         rules["big_spacing"] = round(default_spacing + float(rng.uniform(5, 12)), 1)
 
     if level >= 3:
         # Aggregate: total hole area limit
-        rules["max_area_pct"] = round(float(rng.uniform(15, 35)), 0)
+        rules["max_area_pct"] = round(float(rng.uniform(6, 15)), 0)
 
     if level >= 4:
         # Chained: if area exceeded AND hole is big, it's critical
@@ -291,7 +296,7 @@ def evaluate_rules(
 # GENERATOR
 # ========================
 
-def generate_dataset(n_per_level: int = 200, n_test_per_level: int = 50, seed: int = 90) -> None:
+def generate_dataset(n_per_level: int = 100, n_test_per_level: int = 50, seed: int = 90) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -328,7 +333,7 @@ def generate_dataset(n_per_level: int = 200, n_test_per_level: int = 50, seed: i
                     diameters.append(d)
 
                 # Sometimes force all in-spec for zero-violation samples
-                if rng.random() < 0.3:
+                if rng.random() < 0.4:
                     diameters = [round(float(rng.uniform(rules["diam_min"] + 0.5, rules["diam_max"] - 0.5)), 2)
                                  for _ in range(n_holes)]
 
@@ -521,7 +526,8 @@ def load_samples(split: str) -> list[dict[str, Any]]:
 
 def infer_one(model, processor, image_path: str, rules_text: str,
               plate_w: float, plate_h: float,
-              do_sample: bool = False, temperature: float = 0.7) -> str:
+              do_sample: bool = False, temperature: float = 0.7,
+              max_tokens: int | None = None) -> str:
     image = Image.open(image_path).convert("RGB")
     prompt = make_prompt(rules_text, plate_w, plate_h)
     msgs = [{"role": "user", "content": [
@@ -529,7 +535,7 @@ def infer_one(model, processor, image_path: str, rules_text: str,
     ]}]
     text = processor.apply_chat_template(msgs, add_generation_prompt=True)
     inputs = processor(text=[text], images=[image], return_tensors="pt").to(model.device)
-    gen_kwargs = {"max_new_tokens": MAX_NEW_TOKENS}
+    gen_kwargs = {"max_new_tokens": max_tokens or MAX_NEW_TOKENS}
     if do_sample:
         gen_kwargs.update({"do_sample": True, "temperature": temperature, "top_p": 0.9})
     else:
@@ -739,9 +745,9 @@ def run_binning() -> None:
     model.eval()
 
     all_samples = load_samples("train")
-    # Bin levels 3-4 (levels 1-2 were trained on, likely easy)
-    samples = [s for s in all_samples if s["level"] >= 2]
+    samples = [s for s in all_samples if s["level"] >= 3]
     tolerance = 1.0
+    BIN_MAX_TOKENS = 256  # shorter for speed, just need the total
 
     bins: dict[str, list[int]] = {"easy": [], "medium": [], "hard": []}
     by_level_bins: dict[int, dict[str, int]] = {}
@@ -752,7 +758,8 @@ def run_binning() -> None:
         for _ in range(NUM_GENERATIONS):
             raw = infer_one(model, processor, path, s["rules_text"],
                            s["plate_w_mm"], s["plate_h_mm"],
-                           do_sample=True, temperature=0.7)
+                           do_sample=True, temperature=0.7,
+                           max_tokens=BIN_MAX_TOKENS)
             pred = parse_total(raw)
             if pred is not None and abs(pred - s["gt_total"]) <= tolerance:
                 correct += 1
@@ -908,7 +915,7 @@ def run_grpo() -> None:
             elif abs(pred - gt) <= tolerance:
                 rewards.append(1.0)
             else:
-                rewards.append(max(-1.0, 1.0 - abs(pred - gt) / max(gt, 1.0)))
+                rewards.append(-1.0)
         running_reward.extend(rewards)
 
         mean_r = np.mean(rewards)
@@ -1020,9 +1027,95 @@ def run_summary() -> None:
         print(f"  Bins: easy={len(bins['easy'])} medium={len(bins['medium'])} hard={len(bins['hard'])}")
 
 
+def run_verify() -> None:
+    """Generate dataset without images, check rule triggering statistics."""
+    rng = np.random.default_rng(90)
+    
+    print("\n=== Verify: Rule Triggering Statistics ===\n")
+    
+    for level in [1, 2, 3, 4]:
+        n_samples = 500
+        stats = {
+            "r1_violations": 0, "r2_violations": 0,
+            "r3_triggered": 0, "r3_violations": 0,
+            "r4_violated": 0, "r5_triggered": 0,
+            "zero_total": 0, "total_sum": 0.0,
+        }
+        
+        for _ in range(n_samples):
+            n_holes = int(rng.integers(3, 6))
+            rules = make_rules(rng, level)
+            
+            # Generate diameters
+            diameters: list[float] = []
+            for _ in range(n_holes):
+                if rng.random() < 0.5:
+                    d = round(float(rng.uniform(rules["diam_min"] + 0.3, rules["diam_max"] - 0.3)), 2)
+                else:
+                    d = round(float(rng.uniform(3, 28)), 2)
+                diameters.append(d)
+            if rng.random() < 0.4:
+                diameters = [round(float(rng.uniform(rules["diam_min"] + 0.5, rules["diam_max"] - 0.5)), 2)
+                             for _ in range(n_holes)]
+            
+            # Fake plate and pixel positions (just for rule evaluation)
+            canvas_w, canvas_h = 700, 550
+            plate_margin = 50
+            plate_w_px = canvas_w - 2 * plate_margin
+            plate_h_px = canvas_h - 2 * plate_margin - 40
+            ppm = 6.0
+            plate_w_mm = round(plate_w_px / ppm, 1)
+            plate_h_mm = round(plate_h_px / ppm, 1)
+            plate_x = float(plate_margin)
+            plate_y = 70.0
+            
+            holes = []
+            for i, d_mm in enumerate(diameters):
+                d_px = d_mm * ppm
+                cx = plate_x + plate_w_px * (i + 1) / (n_holes + 1)
+                cy = plate_y + plate_h_px / 2 + float(rng.uniform(-50, 50))
+                holes.append({
+                    "label": f"H{i+1}", "d_mm": d_mm, "d_px": round(d_px, 1),
+                    "cx": round(cx, 1), "cy": round(cy, 1),
+                })
+            
+            result = evaluate_rules(holes, rules, plate_w_mm, plate_h_mm, ppm)
+            
+            if result["r1_violations"]:
+                stats["r1_violations"] += 1
+            if result["r2_violations"]:
+                stats["r2_violations"] += 1
+            if result["r3_triggered"]:
+                stats["r3_triggered"] += 1
+            if result["r3_violations"]:
+                stats["r3_violations"] += 1
+            if result.get("r4_violated", False):
+                stats["r4_violated"] += 1
+            if result.get("r4_violated", False) and result["r3_triggered"] and result.get("big_holes"):
+                stats["r5_triggered"] += 1
+            if result["total"] == 0:
+                stats["zero_total"] += 1
+            stats["total_sum"] += result["total"]
+        
+        print(f"  Level {level} (N={n_samples}):")
+        print(f"    R1 violations: {stats['r1_violations']}/{n_samples} ({stats['r1_violations']/n_samples*100:.0f}%)")
+        print(f"    R2 violations: {stats['r2_violations']}/{n_samples} ({stats['r2_violations']/n_samples*100:.0f}%)")
+        if level >= 2:
+            print(f"    R3 triggered:  {stats['r3_triggered']}/{n_samples} ({stats['r3_triggered']/n_samples*100:.0f}%)")
+            print(f"    R3 violations: {stats['r3_violations']}/{n_samples} ({stats['r3_violations']/n_samples*100:.0f}%)")
+        if level >= 3:
+            print(f"    R4 violated:   {stats['r4_violated']}/{n_samples} ({stats['r4_violated']/n_samples*100:.0f}%)")
+        if level >= 4:
+            print(f"    R5 triggered:  {stats['r5_triggered']}/{n_samples} ({stats['r5_triggered']/n_samples*100:.0f}%)")
+        print(f"    Zero total:    {stats['zero_total']}/{n_samples} ({stats['zero_total']/n_samples*100:.0f}%)")
+        print(f"    Mean total:    {stats['total_sum']/n_samples:.1f}mm")
+        print()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--generate", action="store_true")
+    parser.add_argument("--verify", action="store_true")
     parser.add_argument("--sft", action="store_true")
     parser.add_argument("--bin", action="store_true")
     parser.add_argument("--grpo", action="store_true")
@@ -1032,6 +1125,8 @@ def main() -> None:
 
     if args.generate:
         generate_dataset()
+    if args.verify:
+        run_verify()
     if args.sft:
         run_sft()
     if args.bin:
@@ -1043,7 +1138,7 @@ def main() -> None:
     if args.summary:
         run_summary()
 
-    if not any([args.generate, args.sft, args.bin, args.grpo, args.eval, args.summary]):
+    if not any([args.generate, args.verify, args.sft, args.bin, args.grpo, args.eval, args.summary]):
         parser.print_help()
 
 
