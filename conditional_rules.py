@@ -103,7 +103,7 @@ def make_rules(rng: np.random.Generator, level: int) -> dict[str, Any]:
 
     if level >= 3:
         # Aggregate: total hole area limit
-        rules["max_area_pct"] = round(float(rng.uniform(6, 15)), 0)
+        rules["max_area_pct"] = round(float(rng.uniform(1.5, 5)), 1)
 
     if level >= 4:
         # Chained: if area exceeded AND hole is big, it's critical
@@ -1028,25 +1028,29 @@ def run_summary() -> None:
 
 
 def run_verify() -> None:
-    """Generate dataset without images, check rule triggering statistics."""
+    """Run the ACTUAL generator logic without saving images, check rule stats."""
     rng = np.random.default_rng(90)
     
-    print("\n=== Verify: Rule Triggering Statistics ===\n")
+    print("\n=== Verify: Rule Triggering Statistics (using real generator logic) ===\n")
     
     for level in [1, 2, 3, 4]:
-        n_samples = 500
+        n_target = 500
         stats = {
             "r1_violations": 0, "r2_violations": 0,
             "r3_triggered": 0, "r3_violations": 0,
             "r4_violated": 0, "r5_triggered": 0,
             "zero_total": 0, "total_sum": 0.0,
+            "plate_areas": [], "hole_area_pcts": [],
         }
+        generated = 0
+        attempts = 0
         
-        for _ in range(n_samples):
+        while generated < n_target and attempts < n_target * 5:
+            attempts += 1
             n_holes = int(rng.integers(3, 6))
             rules = make_rules(rng, level)
             
-            # Generate diameters
+            # === EXACT COPY of generator diameter logic ===
             diameters: list[float] = []
             for _ in range(n_holes):
                 if rng.random() < 0.5:
@@ -1058,26 +1062,70 @@ def run_verify() -> None:
                 diameters = [round(float(rng.uniform(rules["diam_min"] + 0.5, rules["diam_max"] - 0.5)), 2)
                              for _ in range(n_holes)]
             
-            # Fake plate and pixel positions (just for rule evaluation)
-            canvas_w, canvas_h = 700, 550
+            # === EXACT COPY of generator canvas/plate logic ===
+            sb_mm = int(rng.choice(SCALE_BAR_VALUES))
+            canvas_w = int(rng.integers(600, 900))
+            canvas_h = int(rng.integers(450, 700))
+            
+            max_diam = max(diameters)
+            min_diam = min(diameters)
+            ppm_min = max(12 / min_diam, 30 / sb_mm)
+            ppm_max = min(0.3 * canvas_w / max_diam, 0.3 * canvas_w / sb_mm)
+            if ppm_min >= ppm_max:
+                canvas_w = int(canvas_w * 1.5)
+                canvas_h = int(canvas_h * 1.5)
+                ppm_max = min(0.3 * canvas_w / max_diam, 0.3 * canvas_w / sb_mm)
+            if ppm_min >= ppm_max:
+                continue
+            
+            ppm = float(rng.uniform(ppm_min, min(ppm_max, ppm_min * 3)))
+            
             plate_margin = 50
             plate_w_px = canvas_w - 2 * plate_margin
             plate_h_px = canvas_h - 2 * plate_margin - 40
-            ppm = 6.0
-            plate_w_mm = round(plate_w_px / ppm, 1)
-            plate_h_mm = round(plate_h_px / ppm, 1)
             plate_x = float(plate_margin)
             plate_y = 70.0
+            plate_w_mm = round(plate_w_px / ppm, 1)
+            plate_h_mm = round(plate_h_px / ppm, 1)
             
+            # === EXACT COPY of generator hole placement logic ===
             holes = []
+            ok = True
             for i, d_mm in enumerate(diameters):
                 d_px = d_mm * ppm
-                cx = plate_x + plate_w_px * (i + 1) / (n_holes + 1)
-                cy = plate_y + plate_h_px / 2 + float(rng.uniform(-50, 50))
+                placed = False
+                for _ in range(100):
+                    cx_lo = plate_x + d_px / 2 + 15
+                    cx_hi = plate_x + plate_w_px - d_px / 2 - 15
+                    cy_lo = plate_y + d_px / 2 + 15
+                    cy_hi = plate_y + plate_h_px - d_px / 2 - 15
+                    if cx_lo >= cx_hi or cy_lo >= cy_hi:
+                        break
+                    cx = float(rng.uniform(cx_lo, cx_hi))
+                    cy = float(rng.uniform(cy_lo, cy_hi))
+                    if all(np.sqrt((cx - h["cx"]) ** 2 + (cy - h["cy"]) ** 2) >
+                           (d_px + h["d_px"]) / 2 + 8 for h in holes):
+                        placed = True
+                        break
+                if not placed:
+                    ok = False
+                    break
                 holes.append({
                     "label": f"H{i+1}", "d_mm": d_mm, "d_px": round(d_px, 1),
                     "cx": round(cx, 1), "cy": round(cy, 1),
                 })
+            
+            if not ok:
+                continue
+            
+            generated += 1
+            
+            # Track plate area stats
+            plate_area = plate_w_mm * plate_h_mm
+            total_hole_area = sum(np.pi * (h["d_mm"] / 2) ** 2 for h in holes)
+            area_pct = total_hole_area / plate_area * 100
+            stats["plate_areas"].append(plate_area)
+            stats["hole_area_pcts"].append(area_pct)
             
             result = evaluate_rules(holes, rules, plate_w_mm, plate_h_mm, ppm)
             
@@ -1097,18 +1145,24 @@ def run_verify() -> None:
                 stats["zero_total"] += 1
             stats["total_sum"] += result["total"]
         
-        print(f"  Level {level} (N={n_samples}):")
-        print(f"    R1 violations: {stats['r1_violations']}/{n_samples} ({stats['r1_violations']/n_samples*100:.0f}%)")
-        print(f"    R2 violations: {stats['r2_violations']}/{n_samples} ({stats['r2_violations']/n_samples*100:.0f}%)")
+        areas = stats["plate_areas"]
+        pcts = stats["hole_area_pcts"]
+        print(f"  Level {level} (N={generated}, attempts={attempts}):")
+        print(f"    Plate area: {np.mean(areas):.0f}mm² (range {np.min(areas):.0f}-{np.max(areas):.0f})")
+        print(f"    Hole area %: {np.mean(pcts):.1f}% (range {np.min(pcts):.1f}-{np.max(pcts):.1f}%)")
+        print(f"    R1 violations: {stats['r1_violations']}/{generated} ({stats['r1_violations']/generated*100:.0f}%)")
+        print(f"    R2 violations: {stats['r2_violations']}/{generated} ({stats['r2_violations']/generated*100:.0f}%)")
         if level >= 2:
-            print(f"    R3 triggered:  {stats['r3_triggered']}/{n_samples} ({stats['r3_triggered']/n_samples*100:.0f}%)")
-            print(f"    R3 violations: {stats['r3_violations']}/{n_samples} ({stats['r3_violations']/n_samples*100:.0f}%)")
+            print(f"    R3 triggered:  {stats['r3_triggered']}/{generated} ({stats['r3_triggered']/generated*100:.0f}%)")
+            print(f"    R3 violations: {stats['r3_violations']}/{generated} ({stats['r3_violations']/generated*100:.0f}%)")
         if level >= 3:
-            print(f"    R4 violated:   {stats['r4_violated']}/{n_samples} ({stats['r4_violated']/n_samples*100:.0f}%)")
+            print(f"    R4 violated:   {stats['r4_violated']}/{generated} ({stats['r4_violated']/generated*100:.0f}%)")
+            if rules.get("max_area_pct"):
+                print(f"    R4 threshold:  {rules['max_area_pct']}% (last sample)")
         if level >= 4:
-            print(f"    R5 triggered:  {stats['r5_triggered']}/{n_samples} ({stats['r5_triggered']/n_samples*100:.0f}%)")
-        print(f"    Zero total:    {stats['zero_total']}/{n_samples} ({stats['zero_total']/n_samples*100:.0f}%)")
-        print(f"    Mean total:    {stats['total_sum']/n_samples:.1f}mm")
+            print(f"    R5 triggered:  {stats['r5_triggered']}/{generated} ({stats['r5_triggered']/generated*100:.0f}%)")
+        print(f"    Zero total:    {stats['zero_total']}/{generated} ({stats['zero_total']/generated*100:.0f}%)")
+        print(f"    Mean total:    {stats['total_sum']/generated:.1f}mm")
         print()
 
 
